@@ -1352,6 +1352,17 @@ app.post('/create-payment-intent', async (req, res) => {
     try {
         console.log('💳 Creating payment intent via Addie...');
 
+        // Extract relevantBDOs from request body
+        const { relevantBDOs } = req.body || {};
+        if (relevantBDOs) {
+            const { emojicodes = [], pubKeys = [] } = relevantBDOs;
+            if (emojicodes.length > 0 || pubKeys.length > 0) {
+                console.log('📦 relevantBDOs included in payment:');
+                if (emojicodes.length > 0) console.log(`   Emojicodes: ${emojicodes.join(', ')}`);
+                if (pubKeys.length > 0) console.log(`   PubKeys: ${pubKeys.join(', ')}`);
+            }
+        }
+
         // Get or create user session
         const user = await getOrCreateUser(req);
 
@@ -1393,6 +1404,15 @@ app.post('/create-payment-intent', async (req, res) => {
         );
 
         console.log(`✅ Payment intent created`);
+
+        // Store relevantBDOs in session for use when tapestry is created
+        if (relevantBDOs) {
+            req.session.relevantBDOs = relevantBDOs;
+            await new Promise((resolve, reject) => {
+                req.session.save((err) => err ? reject(err) : resolve());
+            });
+            console.log('💾 relevantBDOs saved to session');
+        }
 
         res.json({
             success: true,

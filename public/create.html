@@ -95,6 +95,51 @@
         badge.textContent = selectedStyle.charAt(0).toUpperCase() + selectedStyle.slice(1);
         badge.className = `style-badge ${selectedStyle}`;
 
+        // ===== RELEVANT BDOs HANDLING =====
+        // Read relevantBDOs from query params and persist to localStorage
+        // Supports both emojicode format (?relevantBDOs=🔗💎🌟,🎨🐉📌) and pubKey format (?bdoPubKeys=02a1b2,02c3d4)
+        function initRelevantBDOs() {
+            const relevantBDOsParam = urlParams.get('relevantBDOs');
+            const bdoPubKeysParam = urlParams.get('bdoPubKeys');
+
+            if (relevantBDOsParam) {
+                // Store emojicodes
+                const emojicodes = relevantBDOsParam.split(',').map(e => decodeURIComponent(e.trim()));
+                localStorage.setItem('relevantBDOs', JSON.stringify({ emojicodes, pubKeys: [] }));
+                console.log('📦 Stored relevantBDOs (emojicodes):', emojicodes);
+            } else if (bdoPubKeysParam) {
+                // Store pubKeys
+                const pubKeys = bdoPubKeysParam.split(',').map(k => k.trim());
+                localStorage.setItem('relevantBDOs', JSON.stringify({ emojicodes: [], pubKeys }));
+                console.log('📦 Stored relevantBDOs (pubKeys):', pubKeys);
+            }
+            // If neither param present, keep existing localStorage value (for persistence across pages)
+        }
+
+        // Get relevantBDOs from localStorage
+        function getRelevantBDOs() {
+            const stored = localStorage.getItem('relevantBDOs');
+            if (stored) {
+                try {
+                    return JSON.parse(stored);
+                } catch (e) {
+                    console.error('Failed to parse relevantBDOs:', e);
+                    return { emojicodes: [], pubKeys: [] };
+                }
+            }
+            return { emojicodes: [], pubKeys: [] };
+        }
+
+        // Clear relevantBDOs after successful purchase
+        function clearRelevantBDOs() {
+            localStorage.removeItem('relevantBDOs');
+            console.log('🧹 Cleared relevantBDOs from localStorage');
+        }
+
+        // Initialize on page load
+        initRelevantBDOs();
+        // ===== END RELEVANT BDOs HANDLING =====
+
         // State
         let links = [];
         let selectedTemplate = 0;
@@ -448,9 +493,14 @@
             try {
                 console.log('💳 Creating payment intent...');
 
+                // Get relevantBDOs from localStorage to include in payment
+                const relevantBDOs = getRelevantBDOs();
+                console.log('📦 Including relevantBDOs in payment:', relevantBDOs);
+
                 const response = await fetch('/create-payment-intent', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ relevantBDOs })
                 });
 
                 if (!response.ok) {
@@ -582,6 +632,9 @@
 
                             // Close payment modal
                             document.body.removeChild(modal);
+
+                            // Clear relevantBDOs after successful purchase
+                            clearRelevantBDOs();
 
                             // Show success with emojicode
                             showSuccessPage(tapestryData);
