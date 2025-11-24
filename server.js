@@ -32,7 +32,10 @@ import {
     setRelevantBDOs,
     clearRelevantBDOs,
     toStripeMetadata,
-    logRelevantBDOs
+    logRelevantBDOs,
+    configureBdoLib,
+    fetchAndExtractPayees,
+    logPayees
 } from './lib/relevant-bdos-middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +55,9 @@ const ADDIE_BASE_URL = process.env.ADDIE_BASE_URL || 'http://localhost:3009';
 fountLib.baseURL = FOUNT_BASE_URL.endsWith('/') ? FOUNT_BASE_URL : `${FOUNT_BASE_URL}/`;
 bdoLib.baseURL = BDO_BASE_URL.endsWith('/') ? BDO_BASE_URL : `${BDO_BASE_URL}/`;
 addieLib.baseURL = ADDIE_BASE_URL.endsWith('/') ? ADDIE_BASE_URL : `${ADDIE_BASE_URL}/`;
+
+// Configure relevantBDOs middleware with bdo-js instance
+configureBdoLib(bdoLib);
 
 console.log('🔗 Linkitylink - Privacy-First Link Pages');
 console.log('========================================');
@@ -1357,7 +1363,8 @@ app.post('/parse-linktree', async (req, res) => {
 /**
  * POST /create-payment-intent - Create Stripe payment intent via Addie
  *
- * Creates a $20 payment intent for Linkitylink tapestry purchase
+ * Creates a $20 payment intent for Linkitylink tapestry purchase.
+ * Fetches relevantBDOs and extracts their payees for payment splits.
  */
 app.post('/create-payment-intent', async (req, res) => {
     try {
@@ -1366,6 +1373,10 @@ app.post('/create-payment-intent', async (req, res) => {
         // Get relevantBDOs using middleware helper (handles body + session)
         const relevantBDOs = getRelevantBDOs(req);
         logRelevantBDOs(relevantBDOs, '📦 relevantBDOs for payment');
+
+        // Fetch BDOs and extract payees
+        const payees = await fetchAndExtractPayees(relevantBDOs);
+        logPayees(payees, '💰 Payees from relevantBDOs');
 
         // Get or create user session
         const user = await getOrCreateUser(req);
@@ -1400,16 +1411,30 @@ app.post('/create-payment-intent', async (req, res) => {
         // Set up sessionless.getKeys for addie-js to use for signing
         sessionless.getKeys = getKeys;
 
-        // Convert relevantBDOs to Stripe metadata format
+        // Convert relevantBDOs to Stripe metadata format (for record keeping)
         const stripeMetadata = toStripeMetadata(relevantBDOs);
 
-        const intentData = await addieLib.getPaymentIntentWithoutSplits(
-            user.addieUUID,
-            'stripe',
-            amount,
-            currency
-            // TODO: Pass stripeMetadata when Addie supports it
-        );
+        let intentData;
+
+        // Use getPaymentIntent with payees if we have any, otherwise use without splits
+        if (payees.length > 0) {
+            console.log(`💰 Creating payment intent WITH ${payees.length} payees...`);
+            intentData = await addieLib.getPaymentIntent(
+                user.addieUUID,
+                'stripe',
+                amount,
+                currency,
+                payees
+            );
+        } else {
+            console.log('💰 Creating payment intent WITHOUT payees...');
+            intentData = await addieLib.getPaymentIntentWithoutSplits(
+                user.addieUUID,
+                'stripe',
+                amount,
+                currency
+            );
+        }
 
         console.log(`✅ Payment intent created`);
         if (Object.keys(stripeMetadata).length > 0) {
@@ -1421,7 +1446,8 @@ app.post('/create-payment-intent', async (req, res) => {
             clientSecret: intentData.paymentIntent,  // This is the client_secret
             publishableKey: intentData.publishableKey,
             customer: intentData.customer,
-            ephemeralKey: intentData.ephemeralKey
+            ephemeralKey: intentData.ephemeralKey,
+            payeesIncluded: payees.length  // Let client know how many payees were included
         });
 
     } catch (error) {
