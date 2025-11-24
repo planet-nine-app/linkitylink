@@ -25,6 +25,16 @@ import { webkit } from 'playwright';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+// Import relevantBDOs middleware
+import {
+    relevantBDOsMiddleware,
+    getRelevantBDOs,
+    setRelevantBDOs,
+    clearRelevantBDOs,
+    toStripeMetadata,
+    logRelevantBDOs
+} from './lib/relevant-bdos-middleware.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -69,6 +79,7 @@ app.use(session({
 // Middleware
 app.use(express.static(join(__dirname, 'public')));
 app.use(express.json());
+app.use(relevantBDOsMiddleware); // Extract relevantBDOs from requests and store in session
 
 /**
  * Main route - Landing page or tapestry display
@@ -1352,16 +1363,9 @@ app.post('/create-payment-intent', async (req, res) => {
     try {
         console.log('💳 Creating payment intent via Addie...');
 
-        // Extract relevantBDOs from request body
-        const { relevantBDOs } = req.body || {};
-        if (relevantBDOs) {
-            const { emojicodes = [], pubKeys = [] } = relevantBDOs;
-            if (emojicodes.length > 0 || pubKeys.length > 0) {
-                console.log('📦 relevantBDOs included in payment:');
-                if (emojicodes.length > 0) console.log(`   Emojicodes: ${emojicodes.join(', ')}`);
-                if (pubKeys.length > 0) console.log(`   PubKeys: ${pubKeys.join(', ')}`);
-            }
-        }
+        // Get relevantBDOs using middleware helper (handles body + session)
+        const relevantBDOs = getRelevantBDOs(req);
+        logRelevantBDOs(relevantBDOs, '📦 relevantBDOs for payment');
 
         // Get or create user session
         const user = await getOrCreateUser(req);
@@ -1396,22 +1400,20 @@ app.post('/create-payment-intent', async (req, res) => {
         // Set up sessionless.getKeys for addie-js to use for signing
         sessionless.getKeys = getKeys;
 
+        // Convert relevantBDOs to Stripe metadata format
+        const stripeMetadata = toStripeMetadata(relevantBDOs);
+
         const intentData = await addieLib.getPaymentIntentWithoutSplits(
             user.addieUUID,
             'stripe',
             amount,
             currency
+            // TODO: Pass stripeMetadata when Addie supports it
         );
 
         console.log(`✅ Payment intent created`);
-
-        // Store relevantBDOs in session for use when tapestry is created
-        if (relevantBDOs) {
-            req.session.relevantBDOs = relevantBDOs;
-            await new Promise((resolve, reject) => {
-                req.session.save((err) => err ? reject(err) : resolve());
-            });
-            console.log('💾 relevantBDOs saved to session');
+        if (Object.keys(stripeMetadata).length > 0) {
+            console.log('📦 Stripe metadata prepared:', Object.keys(stripeMetadata).length, 'keys');
         }
 
         res.json({
