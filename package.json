@@ -1,0 +1,32 @@
+{
+  "name": "@planetnine/linkitylink",
+  "version": "1.0.0",
+  "description": "Linkitylink - Privacy-first link page service (formerly Glyphenge)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "planet-nine",
+    "linkitylink",
+    "links",
+    "linktree-alternative",
+    "privacy",
+    "bdo",
+    "emojicode"
+  ],
+  "author": "Planet Nine",
+  "license": "MIT",
+  "dependencies": {
+    "addie-js": "latest",
+    "bdo-js": "latest",
+    "express": "^4.18.2",
+    "express-session": "^1.18.2",
+    "fount-js": "latest",
+    "memorystore": "^1.6.7",
+    "playwright": "^1.40.0",
+    "sessionless-node": "latest"
+  }
+}
