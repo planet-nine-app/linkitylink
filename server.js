@@ -38,6 +38,17 @@ import {
     logPayees
 } from './lib/relevant-bdos-middleware.js';
 
+// Import app handoff module
+import {
+    createPendingHandoff,
+    getPendingHandoff,
+    verifyAuthSequence,
+    associateAppCredentials,
+    completeHandoff,
+    getHandoffForApp,
+    getHandoffStats
+} from './lib/app-handoff.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -1827,6 +1838,331 @@ async function saveToCarrierBag(userPubKey, collection, item) {
     }
 }
 
+// ============================================================================
+// App Handoff Endpoints - Web-to-App purchase flow
+// ============================================================================
+
+/**
+ * POST /handoff/create - Create a pending handoff for app purchase
+ *
+ * Creates a BDO (unpurchased) and initiates handoff to The Advancement app.
+ * Returns a token and auth sequence for the color game.
+ *
+ * Body: {
+ *   title: "My Links",
+ *   links: [...],
+ *   relevantBDOs: { emojicodes: [...], pubKeys: [...] }
+ * }
+ */
+app.post('/handoff/create', async (req, res) => {
+    try {
+        console.log('📱 Creating app handoff...');
+
+        const { bdoData, relevantBDOs, productType } = req.body;
+
+        // Extract links from bdoData or directly from body (backward compat)
+        const links = bdoData?.links || req.body.links;
+        const title = bdoData?.title || req.body.title;
+
+        // Validate
+        if (!links || !Array.isArray(links) || links.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing or invalid links array'
+            });
+        }
+
+        // Generate SVG for the BDO
+        const svgTemplate = chooseSVGTemplate(links.length);
+        const svgContent = svgTemplate(links);
+
+        // Build BDO data (not yet saved to BDO service)
+        const finalBdoData = {
+            title: title || 'My Links',
+            type: 'linkitylink',
+            svgContent: svgContent,
+            links: links,
+            source: bdoData?.source || 'create-page',
+            style: bdoData?.style,
+            template: bdoData?.template,
+            createdAt: new Date().toISOString(),
+            status: 'pending_purchase'
+        };
+
+        // Generate keys for the BDO (we'll need these for association later)
+        let bdoKeys;
+        const saveKeys = (keys) => { bdoKeys = keys; };
+        const getKeys = () => bdoKeys;
+
+        const keys = await sessionless.generateKeys(saveKeys, getKeys);
+        const bdoPubKey = keys.pubKey;
+
+        console.log(`🔑 Generated BDO keys: ${bdoPubKey.substring(0, 16)}...`);
+
+        // Store the keys in session for later use
+        req.session.pendingBdoKeys = bdoKeys;
+        await new Promise((resolve, reject) => {
+            req.session.save((err) => err ? reject(err) : resolve());
+        });
+
+        // Create pending handoff
+        const handoff = createPendingHandoff({
+            bdoData: finalBdoData,
+            bdoPubKey,
+            bdoEmojicode: null, // Not yet created
+            relevantBDOs: relevantBDOs || { emojicodes: [], pubKeys: [] },
+            productType: productType || 'linkitylink',
+            webPrice: 2000,  // $20.00
+            appPrice: 1500   // $15.00 (25% discount)
+        });
+
+        console.log(`✅ Handoff created: ${handoff.token.substring(0, 8)}...`);
+
+        res.json({
+            success: true,
+            token: handoff.token,
+            sequence: handoff.sequence,
+            expiresAt: handoff.expiresAt,
+            webPrice: 2000,
+            appPrice: 1500,
+            discount: 500,
+            discountPercent: 25
+        });
+
+    } catch (error) {
+        console.error('❌ Error creating handoff:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /handoff/:token/verify - Verify the auth sequence
+ *
+ * User has completed the color sequence game. Verify it.
+ *
+ * Body: { sequence: ['red', 'blue', 'green', 'yellow', 'purple'] }
+ */
+app.post('/handoff/:token/verify', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { sequence } = req.body;
+
+        console.log(`📱 Verifying handoff sequence: ${token.substring(0, 8)}...`);
+
+        const result = verifyAuthSequence(token, sequence);
+
+        if (result.success) {
+            console.log(`✅ Sequence verified for: ${token.substring(0, 8)}...`);
+        }
+
+        res.json(result);
+
+    } catch (error) {
+        console.error('❌ Error verifying sequence:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /handoff/:token/associate - Associate app credentials with handoff
+ *
+ * Called by The Advancement app after auth sequence is completed.
+ * Links the app's pubKey to this handoff.
+ *
+ * Body: { pubKey, uuid, timestamp, signature }
+ */
+app.post('/handoff/:token/associate', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const appCredentials = req.body;
+
+        console.log(`📱 Associating app with handoff: ${token.substring(0, 8)}...`);
+
+        const result = associateAppCredentials(token, appCredentials);
+
+        if (result.success) {
+            console.log(`✅ App associated: ${appCredentials.pubKey?.substring(0, 16)}...`);
+        }
+
+        res.json(result);
+
+    } catch (error) {
+        console.error('❌ Error associating app:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /handoff/:token/status - Get handoff status for polling
+ *
+ * Called by the web page to check if the app has completed the sequence.
+ * Returns status flags for UI updates.
+ */
+app.get('/handoff/:token/status', async (req, res) => {
+    try {
+        const { token } = req.params;
+
+        const handoff = getPendingHandoff(token);
+
+        if (!handoff) {
+            return res.status(404).json({
+                success: false,
+                error: 'Handoff not found or expired'
+            });
+        }
+
+        res.json({
+            success: true,
+            sequenceCompleted: handoff.sequenceCompleted,
+            appPubKey: handoff.appPubKey ? handoff.appPubKey.substring(0, 16) + '...' : null,
+            completedAt: handoff.completedAt,
+            emojicode: handoff.completedAt ? handoff.bdoEmojicode : null,
+            bdoPubKey: handoff.completedAt ? handoff.bdoPubKey : null
+        });
+
+    } catch (error) {
+        console.error('❌ Error getting handoff status:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /handoff/:token - Get handoff data for the app
+ *
+ * Called by The Advancement app to get BDO data for display.
+ * Requires appPubKey query param for verification.
+ */
+app.get('/handoff/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { appPubKey } = req.query;
+
+        console.log(`📱 Getting handoff: ${token.substring(0, 8)}...`);
+
+        const result = getHandoffForApp(token, appPubKey);
+
+        res.json(result);
+
+    } catch (error) {
+        console.error('❌ Error getting handoff:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /handoff/:token/complete - Complete the handoff after purchase
+ *
+ * Called after successful payment in the app.
+ * Creates the actual BDO and adds to carrierBag.
+ *
+ * Body: { appPubKey, paymentConfirmation }
+ */
+app.post('/handoff/:token/complete', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { appPubKey } = req.body;
+
+        console.log(`📱 Completing handoff: ${token.substring(0, 8)}...`);
+
+        const handoff = getPendingHandoff(token);
+
+        if (!handoff) {
+            return res.status(404).json({
+                success: false,
+                error: 'Handoff not found or expired'
+            });
+        }
+
+        if (handoff.appPubKey !== appPubKey) {
+            return res.status(403).json({
+                success: false,
+                error: 'App not authorized for this handoff'
+            });
+        }
+
+        // Now actually create the BDO
+        console.log('🎨 Creating actual BDO...');
+
+        // Get keys from session if available, or generate new ones
+        let bdoKeys = req.session.pendingBdoKeys;
+        if (!bdoKeys) {
+            const saveKeys = (keys) => { bdoKeys = keys; };
+            const getKeys = () => bdoKeys;
+            await sessionless.generateKeys(saveKeys, getKeys);
+        }
+
+        const saveKeys = (keys) => { bdoKeys = keys; };
+        const getKeys = () => bdoKeys;
+        sessionless.getKeys = getKeys;
+
+        // Create BDO in BDO service
+        const hash = 'Linkitylink';
+        const bdoUUID = await bdoLib.createUser(hash, handoff.bdoData, saveKeys, getKeys);
+        console.log(`✅ BDO created: ${bdoUUID}`);
+
+        // Make BDO public
+        const updatedBDO = await bdoLib.updateBDO(bdoUUID, hash, handoff.bdoData, true);
+        const emojicode = updatedBDO.emojiShortcode;
+        console.log(`✅ Emojicode: ${emojicode}`);
+
+        // Store pubKey metadata for alphanumeric URL lookup
+        bdoMetadataMap.set(handoff.bdoPubKey, {
+            uuid: bdoUUID,
+            emojicode: emojicode,
+            createdAt: new Date(),
+            purchasedVia: 'app-handoff',
+            appPubKey: appPubKey
+        });
+        markMappingsDirty();
+
+        // Mark handoff as complete
+        completeHandoff(token);
+
+        // Clean up session
+        delete req.session.pendingBdoKeys;
+        req.session.save(() => {});
+
+        res.json({
+            success: true,
+            uuid: bdoUUID,
+            pubKey: handoff.bdoPubKey,
+            emojicode: emojicode,
+            message: 'BDO created and added to carrierBag'
+        });
+
+    } catch (error) {
+        console.error('❌ Error completing handoff:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /handoff/stats - Get handoff statistics (debug)
+ */
+app.get('/handoff-stats', async (req, res) => {
+    res.json(getHandoffStats());
+});
+
+// ============================================================================
+
 // Start server
 app.listen(PORT, () => {
     console.log(`\n✅ Linkitylink tapestry weaver active on port ${PORT}`);
@@ -1839,5 +2175,11 @@ app.listen(PORT, () => {
     console.log(`   POST /create - Create new Linkitylink with auto-generated SVG`);
     console.log(`   POST /magic/spell/linkitylink - Cast linkitylink spell (carrierBag links)`);
     console.log(`   POST /magic/spell/glyphtree - Cast glyphtree spell (Linktree URL)`);
+    console.log(`\n📱 App Handoff Endpoints:`);
+    console.log(`   POST /handoff/create - Start web-to-app handoff`);
+    console.log(`   POST /handoff/:token/verify - Verify auth sequence`);
+    console.log(`   POST /handoff/:token/associate - Associate app credentials`);
+    console.log(`   GET  /handoff/:token - Get handoff data for app`);
+    console.log(`   POST /handoff/:token/complete - Complete purchase`);
     console.log('');
 });

@@ -52,12 +52,20 @@
                     <div class="link-list" id="link-list"></div>
                 </div>
 
-                <!-- Buy Button (Below Left Panel) -->
-                <button class="buy-button" onclick="handlePurchase()">
-                    <span class="glow"></span>
-                    <span class="price">$20</span>
-                    <span class="action">Create Your Tapestry</span>
-                </button>
+                <!-- Buy Buttons (Below Left Panel) -->
+                <div class="purchase-options">
+                    <button class="buy-button web-purchase" onclick="handlePurchase()">
+                        <span class="glow"></span>
+                        <span class="price">$20</span>
+                        <span class="action">Buy Now</span>
+                    </button>
+                    <button class="buy-button app-purchase" onclick="handleAppPurchase()">
+                        <span class="glow"></span>
+                        <span class="price">$15</span>
+                        <span class="discount-badge">25% OFF</span>
+                        <span class="action">Buy in App</span>
+                    </button>
+                </div>
             </div>
 
             <!-- Middle Column: Live Preview -->
@@ -614,6 +622,381 @@
             document.getElementById('cancel-payment').addEventListener('click', () => {
                 document.body.removeChild(modal);
             });
+        }
+
+        // Handle app purchase (triggers authteam flow)
+        async function handleAppPurchase() {
+            if (links.length === 0) {
+                alert('Please add at least one link before purchasing');
+                return;
+            }
+
+            try {
+                console.log('📱 Creating handoff for app purchase...');
+
+                // Get relevantBDOs to pass to the handoff
+                const relevantBDOs = RelevantBDOs.get();
+                const styleTemplates = templates[selectedStyle] || templates.stunning;
+                const template = styleTemplates[selectedTemplate];
+
+                // Create the BDO data that will be passed to the app
+                const bdoData = {
+                    title: 'My Glyphenge',
+                    links: links,
+                    source: 'create-page',
+                    style: selectedStyle,
+                    template: template.name
+                };
+
+                const response = await fetch('/handoff/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        bdoData,
+                        relevantBDOs,
+                        productType: 'linkitylink'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to create handoff');
+                }
+
+                const handoffData = await response.json();
+                console.log('✅ Handoff created:', handoffData);
+
+                // Show authteam modal
+                showAuthteamModal(handoffData);
+
+            } catch (error) {
+                console.error('❌ Handoff error:', error);
+                alert('Failed to start app handoff. Please try again.');
+            }
+        }
+
+        // Authteam color sequence modal
+        function showAuthteamModal(handoffData) {
+            const { token, sequence, webPrice, appPrice, discount, discountPercent, expiresAt } = handoffData;
+
+            // Color definitions
+            const colorMap = {
+                red: '#ef4444',
+                blue: '#3b82f6',
+                green: '#22c55e',
+                yellow: '#eab308',
+                purple: '#a855f7',
+                orange: '#f97316'
+            };
+
+            const modal = document.createElement('div');
+            modal.className = 'authteam-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+            `;
+
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                padding: 40px;
+                border-radius: 20px;
+                max-width: 500px;
+                width: 100%;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+                text-align: center;
+                color: white;
+            `;
+
+            content.innerHTML = `
+                <h2 style="margin: 0 0 10px 0; color: #fff; font-size: 1.8rem;">Connect to The Advancement</h2>
+                <p style="margin: 0 0 20px 0; color: #94a3b8; font-size: 1rem;">
+                    Match the color sequence shown in the app to verify your device
+                </p>
+
+                <!-- Discount banner -->
+                <div style="
+                    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin-bottom: 25px;
+                ">
+                    <span style="font-size: 1.2rem; font-weight: bold;">Save $${(discount / 100).toFixed(2)}</span>
+                    <span style="opacity: 0.9;"> (${discountPercent}% off)</span>
+                </div>
+
+                <!-- Sequence display -->
+                <div style="margin-bottom: 25px;">
+                    <p style="color: #94a3b8; margin-bottom: 10px; font-size: 0.9rem;">Enter this sequence in the app:</p>
+                    <div id="sequence-display" style="
+                        display: flex;
+                        justify-content: center;
+                        gap: 10px;
+                        padding: 20px;
+                        background: rgba(255,255,255,0.05);
+                        border-radius: 15px;
+                    ">
+                        ${sequence.map(color => `
+                            <div style="
+                                width: 50px;
+                                height: 50px;
+                                background: ${colorMap[color]};
+                                border-radius: 10px;
+                                box-shadow: 0 4px 15px ${colorMap[color]}40;
+                            " title="${color}"></div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Status -->
+                <div id="handoff-status" style="
+                    padding: 15px;
+                    background: rgba(255,255,255,0.05);
+                    border-radius: 10px;
+                    margin-bottom: 20px;
+                ">
+                    <p style="margin: 0; color: #fbbf24;">
+                        ⏳ Waiting for app verification...
+                    </p>
+                    <p style="margin: 5px 0 0 0; color: #94a3b8; font-size: 0.8rem;">
+                        Open The Advancement app and tap "Connect to Web"
+                    </p>
+                </div>
+
+                <!-- Instructions -->
+                <div style="
+                    text-align: left;
+                    padding: 15px;
+                    background: rgba(255,255,255,0.05);
+                    border-radius: 10px;
+                    margin-bottom: 20px;
+                ">
+                    <p style="margin: 0 0 10px 0; color: #fff; font-weight: 600;">How it works:</p>
+                    <ol style="margin: 0; padding-left: 20px; color: #94a3b8; font-size: 0.9rem;">
+                        <li style="margin-bottom: 8px;">Open The Advancement app on your phone</li>
+                        <li style="margin-bottom: 8px;">Tap "Connect to Web" or scan the QR code</li>
+                        <li style="margin-bottom: 8px;">Enter the color sequence shown above</li>
+                        <li style="margin-bottom: 0;">Complete purchase in the app for $${(appPrice / 100).toFixed(2)}</li>
+                    </ol>
+                </div>
+
+                <!-- Token for manual entry -->
+                <div style="margin-bottom: 20px;">
+                    <p style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 5px;">Handoff code (for manual entry):</p>
+                    <code style="
+                        background: rgba(255,255,255,0.1);
+                        padding: 8px 15px;
+                        border-radius: 5px;
+                        font-family: monospace;
+                        font-size: 0.9rem;
+                        user-select: all;
+                        cursor: pointer;
+                    " onclick="navigator.clipboard.writeText('${token}')" title="Click to copy">${token.substring(0, 16)}...</code>
+                </div>
+
+                <!-- Buttons -->
+                <div style="display: flex; gap: 10px;">
+                    <button id="pay-web-instead" style="
+                        flex: 1;
+                        background: #374151;
+                        color: white;
+                        border: none;
+                        padding: 15px;
+                        border-radius: 10px;
+                        font-size: 14px;
+                        cursor: pointer;
+                    ">Pay $${(webPrice / 100).toFixed(2)} on Web Instead</button>
+                    <button id="cancel-handoff" style="
+                        flex: 1;
+                        background: #4b5563;
+                        color: white;
+                        border: none;
+                        padding: 15px;
+                        border-radius: 10px;
+                        font-size: 14px;
+                        cursor: pointer;
+                    ">Cancel</button>
+                </div>
+            `;
+
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+
+            // Store handoff data for polling
+            window.currentHandoff = {
+                token,
+                modal,
+                pollInterval: null
+            };
+
+            // Start polling for handoff completion
+            startHandoffPolling(token, modal);
+
+            // Button handlers
+            document.getElementById('pay-web-instead').addEventListener('click', () => {
+                stopHandoffPolling();
+                document.body.removeChild(modal);
+                handlePurchase(); // Switch to web purchase
+            });
+
+            document.getElementById('cancel-handoff').addEventListener('click', () => {
+                stopHandoffPolling();
+                document.body.removeChild(modal);
+            });
+        }
+
+        // Poll for handoff completion
+        function startHandoffPolling(token, modal) {
+            const statusEl = modal.querySelector('#handoff-status');
+
+            window.currentHandoff.pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/handoff/${token}/status`);
+                    if (!response.ok) {
+                        throw new Error('Handoff expired or not found');
+                    }
+
+                    const data = await response.json();
+
+                    if (data.sequenceCompleted && data.appPubKey) {
+                        // App has verified and associated
+                        statusEl.innerHTML = `
+                            <p style="margin: 0; color: #22c55e;">
+                                ✅ App connected successfully!
+                            </p>
+                            <p style="margin: 5px 0 0 0; color: #94a3b8; font-size: 0.8rem;">
+                                Complete purchase in The Advancement app
+                            </p>
+                        `;
+                    } else if (data.sequenceCompleted) {
+                        // Sequence verified, waiting for app association
+                        statusEl.innerHTML = `
+                            <p style="margin: 0; color: #3b82f6;">
+                                🔄 Sequence verified, connecting app...
+                            </p>
+                        `;
+                    }
+
+                    if (data.completedAt) {
+                        // Purchase completed in app!
+                        stopHandoffPolling();
+                        document.body.removeChild(modal);
+
+                        // Clear relevantBDOs
+                        RelevantBDOs.clear();
+
+                        // Show success
+                        showAppPurchaseSuccess(data);
+                    }
+
+                } catch (error) {
+                    console.log('Handoff polling error:', error.message);
+                    // Don't stop polling on minor errors
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        function stopHandoffPolling() {
+            if (window.currentHandoff && window.currentHandoff.pollInterval) {
+                clearInterval(window.currentHandoff.pollInterval);
+                window.currentHandoff.pollInterval = null;
+            }
+        }
+
+        // Show success after app purchase
+        function showAppPurchaseSuccess(data) {
+            const { emojicode, bdoPubKey } = data;
+
+            // Construct URLs
+            const emojicodeUrl = emojicode
+                ? `${window.location.origin}?emojicode=${encodeURIComponent(emojicode)}`
+                : null;
+            const alphanumericUrl = bdoPubKey
+                ? `${window.location.origin}/t/${bdoPubKey.substring(0, 16)}`
+                : null;
+
+            document.body.innerHTML = `
+                <div style="
+                    min-height: 100vh;
+                    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                ">
+                    <div style="
+                        background: white;
+                        border-radius: 20px;
+                        padding: 60px 40px;
+                        max-width: 600px;
+                        width: 100%;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                        text-align: center;
+                    ">
+                        <div style="font-size: 64px; margin-bottom: 20px;">📱✨</div>
+                        <h1 style="color: #333; margin-bottom: 10px; font-size: 2rem;">Purchase Complete!</h1>
+                        <p style="color: #666; margin-bottom: 20px; font-size: 1.1rem;">
+                            Your tapestry was purchased in The Advancement app
+                        </p>
+                        <p style="color: #10b981; margin-bottom: 40px; font-size: 1rem; font-weight: 600;">
+                            You saved 25% with the app discount!
+                        </p>
+
+                        ${emojicode ? `
+                        <!-- Emojicode -->
+                        <div style="
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white;
+                            padding: 20px;
+                            border-radius: 15px;
+                            margin-bottom: 30px;
+                        ">
+                            <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 8px;">Your Emojicode</div>
+                            <div style="
+                                font-size: 2rem;
+                                font-family: monospace;
+                                letter-spacing: 2px;
+                            ">${emojicode}</div>
+                        </div>
+                        ` : ''}
+
+                        ${emojicodeUrl ? `
+                        <div style="margin-bottom: 30px;">
+                            <a href="${emojicodeUrl}" style="
+                                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                                color: white;
+                                padding: 15px 30px;
+                                border-radius: 10px;
+                                text-decoration: none;
+                                font-weight: 600;
+                                display: inline-block;
+                            ">View Your Tapestry</a>
+                        </div>
+                        ` : ''}
+
+                        <p style="color: #666; font-size: 0.9rem;">
+                            Your tapestry is now in your carrierBag in The Advancement app.
+                        </p>
+
+                        <a href="/create" style="
+                            color: #10b981;
+                            text-decoration: none;
+                            font-weight: 600;
+                            margin-top: 20px;
+                            display: inline-block;
+                        ">Create Another Tapestry</a>
+                    </div>
+                </div>
+            `;
         }
 
         function showMessage(message, type) {
