@@ -1511,6 +1511,8 @@ app.post('/magic/spell/:spellName', async (req, res) => {
             result = await resolveLinkitylinkSpell(caster, payload);
         } else if (spellName === 'glyphtree') {
             result = await resolveGlyphtreeSpell(caster, payload);
+        } else if (spellName === 'submitLinkitylinkTemplate') {
+            result = await resolveSubmitTemplateSpell(caster, payload);
         } else {
             return res.status(404).json({
                 success: false,
@@ -1837,6 +1839,213 @@ async function saveToCarrierBag(userPubKey, collection, item) {
         return { success: false, error: error.message };
     }
 }
+
+/**
+ * Resolve submitLinkitylinkTemplate spell
+ * Allows users to submit custom templates and earn when they're used
+ *
+ * Cost: 600 MP
+ *
+ * Payload:
+ * {
+ *   paymentMethod: 'mp' | 'money',
+ *   template: {
+ *     name: 'Sunset Gradient',
+ *     colors: ['#ff6b6b', '#ee5a6f', '#feca57'],
+ *     linkColors: ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899']
+ *   },
+ *   payeeQuadEmojicode: '🔗💎🌟🎨🐉📌🌍🔑'
+ * }
+ */
+async function resolveSubmitTemplateSpell(caster, payload) {
+    console.log('🎨 Resolving submitLinkitylinkTemplate spell...');
+
+    const { paymentMethod, template, payeeQuadEmojicode } = payload;
+
+    // Validate required components
+    if (!template || !template.name || !template.colors || !template.linkColors) {
+        return { success: false, error: 'Invalid template structure' };
+    }
+
+    if (!Array.isArray(template.colors) || template.colors.length === 0) {
+        return { success: false, error: 'Template colors must be a non-empty array' };
+    }
+
+    if (!Array.isArray(template.linkColors) || template.linkColors.length === 0) {
+        return { success: false, error: 'Template linkColors must be a non-empty array' };
+    }
+
+    if (!payeeQuadEmojicode || payeeQuadEmojicode.length !== 8) {
+        return { success: false, error: 'Invalid payeeQuadEmojicode (must be 8 emojis)' };
+    }
+
+    if (!paymentMethod || (paymentMethod !== 'mp' && paymentMethod !== 'money')) {
+        return { success: false, error: 'Invalid payment method (must be mp or money)' };
+    }
+
+    // Process payment (600 MP)
+    const paymentResult = await processSpellPayment(caster, paymentMethod, 600); // 600 MP
+    if (!paymentResult.success) {
+        return paymentResult;
+    }
+
+    console.log(`✅ Payment processed (600 MP)`);
+
+    // Build template BDO
+    const templateBDO = {
+        type: 'linkitylink-template',
+        name: template.name,
+        colors: template.colors,
+        linkColors: template.linkColors,
+        payeeEmojicode: payeeQuadEmojicode,
+        creatorPubKey: caster.pubKey,
+        submittedAt: new Date().toISOString(),
+        status: 'active'
+    };
+
+    // Generate temporary keys for template BDO
+    const saveKeys = (keys) => { tempKeys = keys; };
+    const getKeys = () => tempKeys;
+    let tempKeys = null;
+
+    const keys = await sessionless.generateKeys(saveKeys, getKeys);
+    const pubKey = keys.pubKey;
+
+    console.log(`🔑 Generated template BDO keys: ${pubKey.substring(0, 16)}...`);
+
+    // Create template BDO
+    const hash = 'Linkitylink-Template';
+    console.log(`🌐 Creating template BDO with hash: ${hash}`);
+
+    const bdoUUID = await bdoLib.createUser(hash, templateBDO, saveKeys, getKeys);
+    console.log(`✅ Template BDO created: ${bdoUUID}`);
+
+    // Make BDO public to get emojicode
+    console.log(`🌍 Making template BDO public...`);
+    const updatedBDO = await bdoLib.updateBDO(bdoUUID, hash, templateBDO, true);
+    const emojicode = updatedBDO.emojiShortcode;
+
+    console.log(`✅ Template emojicode: ${emojicode}`);
+
+    // Add template to BDO service index for querying
+    try {
+        const addToIndexURL = `${BDO_BASE_URL}/templates/${hash}/add`;
+        const indexResponse = await fetch(addToIndexURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emojicode })
+        });
+
+        if (indexResponse.ok) {
+            console.log(`✅ Added template ${emojicode} to BDO index`);
+        } else {
+            console.warn(`⚠️ Failed to add template to index: ${indexResponse.status}`);
+        }
+    } catch (err) {
+        console.warn(`⚠️ Failed to add template to index:`, err.message);
+    }
+
+    // Save to creator's carrierBag
+    const carrierBagResult = await saveToCarrierBag(caster.pubKey, 'linkitylinkTemplates', {
+        title: template.name,
+        type: 'linkitylink-template',
+        emojicode: emojicode,
+        bdoPubKey: pubKey,
+        payeeQuadEmojicode: payeeQuadEmojicode,
+        createdAt: templateBDO.submittedAt
+    });
+
+    if (!carrierBagResult.success) {
+        console.warn('⚠️ Failed to save template to carrierBag, but spell succeeded');
+    }
+
+    // Return success
+    return {
+        success: true,
+        uuid: bdoUUID,
+        pubKey: pubKey,
+        emojicode: emojicode,
+        templateName: template.name,
+        payment: paymentResult.payment,
+        message: 'Template submitted successfully! You will earn a share when users purchase linkitylinks with your template.'
+    };
+}
+
+// Template cache with 5-minute TTL
+let templateCache = {
+    templates: [],
+    lastFetched: null,
+    ttl: 5 * 60 * 1000 // 5 minutes
+};
+
+/**
+ * GET /templates - Get all user-submitted templates
+ *
+ * Fetches all linkitylink-template BDOs from the BDO service.
+ * Returns active templates with their payee information for revenue sharing.
+ * Caches results for 5 minutes to reduce BDO service load.
+ */
+app.get('/templates', async (req, res) => {
+    try {
+        console.log('🎨 Fetching user-submitted templates...');
+
+        // Check cache
+        const now = Date.now();
+        if (templateCache.lastFetched && (now - templateCache.lastFetched) < templateCache.ttl) {
+            console.log(`✅ Returning ${templateCache.templates.length} cached templates`);
+            return res.json({
+                success: true,
+                templates: templateCache.templates,
+                cached: true
+            });
+        }
+
+        // Query BDO service for all templates with hash 'Linkitylink-Template'
+        const hash = 'Linkitylink-Template';
+        const templatesURL = `${BDO_BASE_URL}/templates/${hash}`;
+
+        console.log(`📡 Querying BDO service: ${templatesURL}`);
+
+        const response = await fetch(templatesURL);
+
+        if (!response.ok) {
+            throw new Error(`BDO service returned ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        console.log(`✅ Received ${data.count} templates from BDO service`);
+
+        // Filter for active templates and format for client
+        const templates = data.templates
+            .filter(t => t.status === 'active')
+            .map(t => ({
+                name: t.name,
+                colors: t.colors,
+                linkColors: t.linkColors,
+                emojicode: t.emojicode,
+                payeeEmojicode: t.payeeEmojicode,
+                creatorPubKey: t.creatorPubKey
+            }));
+
+        // Update cache
+        templateCache.templates = templates;
+        templateCache.lastFetched = now;
+
+        res.json({
+            success: true,
+            templates: templates,
+            count: templates.length
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching templates:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 // ============================================================================
 // App Handoff Endpoints - Web-to-App purchase flow

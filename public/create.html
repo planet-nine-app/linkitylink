@@ -110,8 +110,10 @@
         // State
         let links = [];
         let selectedTemplate = 0;
+        let selectedTemplateEmojicode = null; // Track template emojicode for payment
         let stripe = null;
         let elements = null;
+        let userSubmittedTemplates = []; // Will hold templates from server
 
         // Tab switching
         function switchTab(tab) {
@@ -235,49 +237,31 @@
         // Template definitions for each style
         const templates = {
             stunning: [
-                { name: 'Sunset', colors: ['#ff6b6b', '#ee5a6f', '#feca57'], linkColors: ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899'] },
-                { name: 'Ocean', colors: ['#0984e3', '#74b9ff', '#00cec9'], linkColors: ['#0984e3', '#74b9ff', '#00cec9', '#6c5ce7'] },
-                { name: 'Forest', colors: ['#00b894', '#55efc4', '#a29bfe'], linkColors: ['#00b894', '#55efc4', '#6c5ce7', '#fd79a8'] }
+                { name: 'Sunset', colors: ['#ff6b6b', '#ee5a6f', '#feca57'], linkColors: ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899'] }
             ],
             dazzling: [
-                { name: 'Rainbow', colors: ['#ff6b6b', '#feca57', '#48dbfb'], linkColors: ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3'] },
-                { name: 'Neon', colors: ['#ff00ff', '#00ffff', '#ffff00'], linkColors: ['#ff00ff', '#00ffff', '#ffff00', '#00ff00'] },
-                { name: 'Aurora', colors: ['#a8edea', '#fed6e3', '#f093fb'], linkColors: ['#a8edea', '#fed6e3', '#f093fb', '#ffecd2'] }
+                { name: 'Rainbow', colors: ['#ff6b6b', '#feca57', '#48dbfb'], linkColors: ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3'] }
             ],
             electric: [
-                { name: 'Lightning', colors: ['#00d2ff', '#3a47d5', '#4facfe'], linkColors: ['#00d2ff', '#3a47d5', '#4facfe', '#00f2fe'] },
-                { name: 'Cyber', colors: ['#00f260', '#0575e6', '#667eea'], linkColors: ['#00f260', '#0575e6', '#667eea', '#764ba2'] },
-                { name: 'Volt', colors: ['#fcff9e', '#c67700', '#ee0979'], linkColors: ['#fcff9e', '#c67700', '#ee0979', '#ff6a00'] }
+                { name: 'Lightning', colors: ['#00d2ff', '#3a47d5', '#4facfe'], linkColors: ['#00d2ff', '#3a47d5', '#4facfe', '#00f2fe'] }
             ],
             polished: [
-                { name: 'Steel', colors: ['#2c3e50', '#4ca1af', '#536976'], linkColors: ['#4ca1af', '#536976', '#bdc3c7', '#95a5a6'] },
-                { name: 'Graphite', colors: ['#232526', '#414345', '#667eea'], linkColors: ['#414345', '#667eea', '#764ba2', '#868f96'] },
-                { name: 'Silver', colors: ['#bdc3c7', '#2c3e50', '#95a5a6'], linkColors: ['#2c3e50', '#95a5a6', '#7f8c8d', '#34495e'] }
+                { name: 'Steel', colors: ['#2c3e50', '#4ca1af', '#536976'], linkColors: ['#4ca1af', '#536976', '#bdc3c7', '#95a5a6'] }
             ],
             professional: [
-                { name: 'Corporate', colors: ['#141e30', '#243b55', '#2c3e50'], linkColors: ['#243b55', '#2c3e50', '#34495e', '#7f8c8d'] },
-                { name: 'Executive', colors: ['#1e3c72', '#2a5298', '#7f8c8d'], linkColors: ['#2a5298', '#7f8c8d', '#95a5a6', '#3498db'] },
-                { name: 'Business', colors: ['#2c3e50', '#34495e', '#7f8c8d'], linkColors: ['#34495e', '#7f8c8d', '#95a5a6', '#2c3e50'] }
+                { name: 'Corporate', colors: ['#141e30', '#243b55', '#2c3e50'], linkColors: ['#243b55', '#2c3e50', '#34495e', '#7f8c8d'] }
             ],
             captivating: [
-                { name: 'Passion', colors: ['#fc466b', '#3f5efb', '#f093fb'], linkColors: ['#fc466b', '#3f5efb', '#f093fb', '#4facfe'] },
-                { name: 'Dream', colors: ['#fa709a', '#fee140', '#30cfd0'], linkColors: ['#fa709a', '#fee140', '#30cfd0', '#764ba2'] },
-                { name: 'Mystery', colors: ['#654ea3', '#eaafc8', '#667eea'], linkColors: ['#654ea3', '#eaafc8', '#667eea', '#764ba2'] }
+                { name: 'Passion', colors: ['#fc466b', '#3f5efb', '#f093fb'], linkColors: ['#fc466b', '#3f5efb', '#f093fb', '#4facfe'] }
             ],
             delightful: [
-                { name: 'Sunshine', colors: ['#fdbb2d', '#22c1c3', '#feca57'], linkColors: ['#fdbb2d', '#22c1c3', '#feca57', '#ee5a6f'] },
-                { name: 'Candy', colors: ['#ff9a9e', '#fecfef', '#fad0c4'], linkColors: ['#ff9a9e', '#fecfef', '#fad0c4', '#ff6b6b'] },
-                { name: 'Spring', colors: ['#a8edea', '#fed6e3', '#81fbb8'], linkColors: ['#a8edea', '#fed6e3', '#81fbb8', '#10b981'] }
+                { name: 'Sunshine', colors: ['#fdbb2d', '#22c1c3', '#feca57'], linkColors: ['#fdbb2d', '#22c1c3', '#feca57', '#ee5a6f'] }
             ],
             magical: [
-                { name: 'Unicorn', colors: ['#a8edea', '#fed6e3', '#f093fb'], linkColors: ['#a8edea', '#fed6e3', '#f093fb', '#ffecd2'] },
-                { name: 'Fairy', colors: ['#ffecd2', '#fcb69f', '#ff9a9e'], linkColors: ['#ffecd2', '#fcb69f', '#ff9a9e', '#fecfef'] },
-                { name: 'Wizard', colors: ['#667eea', '#764ba2', '#f093fb'], linkColors: ['#667eea', '#764ba2', '#f093fb', '#a8edea'] }
+                { name: 'Unicorn', colors: ['#a8edea', '#fed6e3', '#f093fb'], linkColors: ['#a8edea', '#fed6e3', '#f093fb', '#ffecd2'] }
             ],
             basic: [
-                { name: 'Clean', colors: ['#6a85b6', '#bac8e0', '#95a5a6'], linkColors: ['#6a85b6', '#bac8e0', '#95a5a6', '#7f8c8d'] },
-                { name: 'Simple', colors: ['#7f8c8d', '#bdc3c7', '#ecf0f1'], linkColors: ['#7f8c8d', '#bdc3c7', '#95a5a6', '#34495e'] },
-                { name: 'Minimal', colors: ['#95a5a6', '#bdc3c7', '#ecf0f1'], linkColors: ['#95a5a6', '#bdc3c7', '#ecf0f1', '#7f8c8d'] }
+                { name: 'Clean', colors: ['#6a85b6', '#bac8e0', '#95a5a6'], linkColors: ['#6a85b6', '#bac8e0', '#95a5a6', '#7f8c8d'] }
             ]
         };
 
@@ -354,8 +338,18 @@
         // Update live preview
         function updatePreview() {
             const container = document.getElementById('preview-container');
-            const styleTemplates = templates[selectedStyle] || templates.stunning;
-            const template = styleTemplates[selectedTemplate];
+
+            // Get template from either built-in or user-submitted
+            let template;
+            if (selectedTemplateEmojicode) {
+                // User template selected
+                const userTemplateIndex = userSubmittedTemplates.findIndex(t => t.emojicode === selectedTemplateEmojicode);
+                template = userSubmittedTemplates[userTemplateIndex];
+            } else {
+                // Built-in template selected
+                const styleTemplates = templates[selectedStyle] || templates.stunning;
+                template = styleTemplates[selectedTemplate];
+            }
 
             if (links.length === 0) {
                 container.innerHTML = '<div class="preview-placeholder">Add links to see your tapestry preview</div>';
@@ -369,11 +363,25 @@
             const track = document.getElementById('carousel-track');
             const styleTemplates = templates[selectedStyle] || templates.stunning;
 
-            const templateCards = styleTemplates.map((template, index) => `
-                <div class="template-card ${index === selectedTemplate ? 'selected' : ''}" onclick="selectTemplate(${index})">
+            // Render built-in templates
+            const builtInTemplateCards = styleTemplates.map((template, index) => `
+                <div class="template-card ${index === selectedTemplate && !selectedTemplateEmojicode ? 'selected' : ''}" onclick="selectBuiltInTemplate(${index})">
                     ${generateTemplateSVG(template)}
                 </div>
             `).join('');
+
+            // Render user-submitted templates
+            const userTemplateCards = userSubmittedTemplates.map((template, index) => {
+                const isSelected = selectedTemplateEmojicode === template.emojicode;
+                return `
+                    <div class="template-card ${isSelected ? 'selected' : ''}" onclick='selectUserTemplate(${index}, "${template.emojicode}")'>
+                        ${generateTemplateSVG(template)}
+                        <div style="position: absolute; top: 10px; right: 10px; background: rgba(16, 185, 129, 0.9); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">
+                            Community
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             const customTemplateCard = `
                 <div class="template-card" onclick="showTemplateOptions()" style="cursor: pointer;">
@@ -398,14 +406,33 @@
                 </div>
             `;
 
-            track.innerHTML = templateCards + customTemplateCard;
+            track.innerHTML = builtInTemplateCards + userTemplateCards + customTemplateCard;
         }
 
-        // Select template
-        function selectTemplate(index) {
+        // Select built-in template
+        function selectBuiltInTemplate(index) {
             selectedTemplate = index;
+            selectedTemplateEmojicode = null; // Clear user template selection
             renderCarousel();
             updatePreview();
+
+            // Clear template from relevantBDOs
+            RelevantBDOs.removeByEmojicode(selectedTemplateEmojicode);
+        }
+
+        // Select user-submitted template
+        function selectUserTemplate(index, emojicode) {
+            selectedTemplate = index;
+            selectedTemplateEmojicode = emojicode;
+            renderCarousel();
+
+            // Get template from userSubmittedTemplates
+            const template = userSubmittedTemplates[index];
+            updatePreview();
+
+            // Add template emojicode to relevantBDOs for payment sharing
+            console.log(`🎨 Selected user template: ${template.name} (${emojicode})`);
+            RelevantBDOs.addEmojicode(emojicode);
         }
 
         // Scroll carousel
@@ -448,6 +475,24 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&apos;');
+        }
+
+        // Fetch user-submitted templates from server
+        async function fetchUserSubmittedTemplates() {
+            try {
+                console.log('🎨 Fetching user-submitted templates...');
+                const response = await fetch('/templates');
+                const data = await response.json();
+
+                if (data.success && data.templates) {
+                    userSubmittedTemplates = data.templates;
+                    console.log(`✅ Loaded ${userSubmittedTemplates.length} user-submitted templates`);
+                } else {
+                    console.log('ℹ️ No user-submitted templates available yet');
+                }
+            } catch (error) {
+                console.error('❌ Error fetching user templates:', error);
+            }
         }
 
         // Handle purchase
@@ -1402,10 +1447,14 @@
         }
 
 
-        // Initialize
-        renderCarousel();
-        renderLinkList();
-        updatePreview();
+        // Initialize - fetch user templates then render UI
+        async function initialize() {
+            await fetchUserSubmittedTemplates();
+            renderCarousel();
+            renderLinkList();
+            updatePreview();
+        }
+        initialize();
     </script>
 </body>
 </html>
