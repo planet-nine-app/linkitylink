@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moderate Templates - Linkitylink Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .admin-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .admin-header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .admin-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .admin-header p {
+            color: #94a3b8;
+            font-size: 1.1rem;
+        }
+
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 30px;
+        }
+
+        .template-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .template-preview {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .template-info h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 1.3rem;
+        }
+
+        .template-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .template-meta-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .template-meta label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .color-swatches {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .color-swatch {
+            width: 30px;
+            height: 30px;
+            border-radius: 5px;
+            border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .template-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .approve-btn, .reject-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .approve-btn {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .approve-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .reject-btn {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .reject-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+        }
+
+        .approve-btn:disabled, .reject-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+        }
+
+        .empty-state svg {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .empty-state h2 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            color: #94a3b8;
+            font-size: 1.1rem;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            padding: 40px;
+        }
+
+        .pubkey-input {
+            max-width: 600px;
+            margin: 0 auto 40px;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .pubkey-input label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .pubkey-input input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        .pubkey-input input:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        .pubkey-input button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 12px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .pubkey-input button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>Template Moderation</h1>
+            <p>Review and approve user-submitted templates</p>
+        </div>
+
+        <div class="pubkey-input">
+            <label for="admin-pubkey">Admin Public Key</label>
+            <input
+                type="text"
+                id="admin-pubkey"
+                placeholder="Enter your public key to authenticate"
+                autocomplete="off"
+            >
+            <button onclick="loadPendingTemplates()">Load Pending Templates</button>
+        </div>
+
+        <div id="error-container"></div>
+        <div id="template-container"></div>
+    </div>
+
+    <script>
+        let adminPubKey = '';
+
+        // Generate template preview SVG
+        function generateTemplateSVG(template) {
+            const gradientStops = template.colors.map((color, index) => {
+                const offset = (index / (template.colors.length - 1)) * 100;
+                return `<stop offset="${offset}%" style="stop-color:${color};stop-opacity:1" />`;
+            }).join('');
+
+            const linkCards = template.linkColors.slice(0, 2).map((color, i) => {
+                const y = 140 + i * 90;
+                return `
+                    <g>
+                        <rect x="50" y="${y}" width="500" height="70" fill="${color}" rx="10" opacity="0.9"/>
+                        <text x="80" y="${y + 30}" font-family="system-ui" font-size="14" font-weight="600" fill="white">Sample Link ${i + 1}</text>
+                        <text x="80" y="${y + 50}" font-family="system-ui" font-size="12" fill="white" opacity="0.8">example.com</text>
+                    </g>
+                `;
+            }).join('');
+
+            return `
+                <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="bg-${template.emojicode}" x1="0%" y1="0%" x2="0%" y2="100%">
+                            ${gradientStops}
+                        </linearGradient>
+                    </defs>
+                    <rect width="600" height="400" fill="url(#bg-${template.emojicode})" rx="15"/>
+                    <text x="300" y="80" font-family="system-ui" font-size="24" font-weight="bold" fill="white" text-anchor="middle">
+                        ${escapeXML(template.name)}
+                    </text>
+                    ${linkCards}
+                </svg>
+            `;
+        }
+
+        function escapeXML(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+        }
+
+        async function loadPendingTemplates() {
+            adminPubKey = document.getElementById('admin-pubkey').value.trim();
+
+            if (!adminPubKey) {
+                showError('Please enter your admin public key');
+                return;
+            }
+
+            const container = document.getElementById('template-container');
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = '';
+            container.innerHTML = '<div class="loading">Loading pending templates...</div>';
+
+            try {
+                const response = await fetch(`/templates/pending?pubKey=${encodeURIComponent(adminPubKey)}`);
+
+                if (response.status === 403) {
+                    showError('Unauthorized - You do not have admin nineum');
+                    container.innerHTML = '';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to load templates');
+                }
+
+                if (data.count === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div>✅</div>
+                            <h2>All Clear!</h2>
+                            <p>No pending templates to review</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                renderTemplates(data.templates);
+
+            } catch (error) {
+                console.error('Error loading templates:', error);
+                showError(`Error: ${error.message}`);
+                container.innerHTML = '';
+            }
+        }
+
+        function renderTemplates(templates) {
+            const container = document.getElementById('template-container');
+
+            const templateCards = templates.map(template => `
+                <div class="template-card" id="template-${template.emojicode}">
+                    <div class="template-preview">
+                        ${generateTemplateSVG(template)}
+                    </div>
+                    <div class="template-info">
+                        <h3>${escapeXML(template.name)}</h3>
+                        <div class="template-meta">
+                            <div class="template-meta-row">
+                                <label>Submitted:</label>
+                                <span>${new Date(template.submittedAt).toLocaleDateString()}</span>
+                            </div>
+                            <div class="template-meta-row">
+                                <label>Creator:</label>
+                                <span style="font-family: monospace; font-size: 0.8rem;">${template.creatorPubKey.substring(0, 16)}...</span>
+                            </div>
+                            <div class="template-meta-row">
+                                <label>Emojicode:</label>
+                                <span>${template.emojicode}</span>
+                            </div>
+                            <div>
+                                <label>Background Colors:</label>
+                                <div class="color-swatches">
+                                    ${template.colors.map(color => `<div class="color-swatch" style="background: ${color};" title="${color}"></div>`).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <label>Link Colors:</label>
+                                <div class="color-swatches">
+                                    ${template.linkColors.map(color => `<div class="color-swatch" style="background: ${color};" title="${color}"></div>`).join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="template-actions">
+                            <button class="approve-btn" onclick="moderateTemplate('${template.emojicode}', 'approve')">
+                                Approve
+                            </button>
+                            <button class="reject-btn" onclick="moderateTemplate('${template.emojicode}', 'reject')">
+                                Reject
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="template-grid">${templateCards}</div>`;
+        }
+
+        async function moderateTemplate(emojicode, action) {
+            const card = document.getElementById(`template-${emojicode}`);
+            const buttons = card.querySelectorAll('button');
+
+            // Disable buttons
+            buttons.forEach(btn => btn.disabled = true);
+
+            try {
+                const response = await fetch(`/template/${encodeURIComponent(emojicode)}/moderate`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pubKey: adminPubKey,
+                        action: action
+                    })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Moderation failed');
+                }
+
+                // Remove card with animation
+                card.style.transition = 'opacity 0.3s, transform 0.3s';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.9)';
+
+                setTimeout(() => {
+                    card.remove();
+
+                    // Check if no more templates
+                    const remaining = document.querySelectorAll('.template-card').length;
+                    if (remaining === 0) {
+                        document.getElementById('template-container').innerHTML = `
+                            <div class="empty-state">
+                                <div>✅</div>
+                                <h2>All Done!</h2>
+                                <p>No more pending templates to review</p>
+                            </div>
+                        `;
+                    }
+                }, 300);
+
+                console.log(`✅ Template ${action}d:`, data);
+
+            } catch (error) {
+                console.error(`Error ${action}ing template:`, error);
+                showError(`Failed to ${action} template: ${error.message}`);
+                buttons.forEach(btn => btn.disabled = false);
+            }
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error-message">${escapeXML(message)}</div>`;
+        }
+
+        // Auto-focus pubkey input on load
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('admin-pubkey').focus();
+        });
+    </script>
+</body>
+</html>
