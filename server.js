@@ -114,6 +114,9 @@ app.get('/', async (req, res) => {
     try {
         const { emojicode, pubKey, timestamp, signature } = req.query;
 
+        // Debug logging
+        console.log('🔍 GET / query params:', { emojicode: emojicode ? emojicode.substring(0, 20) + '...' : 'none', pubKey: pubKey ? pubKey.substring(0, 16) + '...' : 'none' });
+
         // If no query parameters, serve landing page
         if (!emojicode && !pubKey && !timestamp && !signature) {
             const fs = await import('fs/promises');
