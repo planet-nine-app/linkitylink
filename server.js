@@ -60,7 +60,7 @@ const PORT = process.env.PORT || 3010;
 // Configuration (defaults to dev environment)
 const FOUNT_BASE_URL = process.env.FOUNT_BASE_URL || 'https://dev.fount.allyabase.com/';
 const BDO_BASE_URL = process.env.BDO_BASE_URL || 'https://dev.bdo.allyabase.com';
-const ADDIE_BASE_URL = process.env.ADDIE_BASE_URL || 'http://localhost:3009';
+const ADDIE_BASE_URL = process.env.ADDIE_BASE_URL || 'https://dev.addie.allyabase.com';
 
 // Configure SDKs
 fountLib.baseURL = FOUNT_BASE_URL.endsWith('/') ? FOUNT_BASE_URL : `${FOUNT_BASE_URL}/`;
