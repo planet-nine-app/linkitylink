@@ -99,6 +99,62 @@ app.use(express.json());
 app.use(relevantBDOsMiddleware); // Extract relevantBDOs from requests and store in session
 
 /**
+ * View linkitylink by emojicode
+ * Route: /view/:emojicode
+ */
+app.get('/view/:emojicode', async (req, res) => {
+    try {
+        const { emojicode } = req.params;
+
+        console.log(`😀 Fetching Linkitylink by emojicode: ${emojicode}`);
+
+        let links = [];
+        let userName = 'My Links';
+
+        try {
+            // Fetch Linkitylink BDO by emojicode
+            const linkHubBDO = await bdoLib.getBDOByEmojicode(emojicode);
+
+            console.log('📦 Linkitylink BDO fetched:', JSON.stringify(linkHubBDO).substring(0, 200));
+
+            // Extract links from BDO data
+            const bdoData = linkHubBDO.bdo || linkHubBDO;
+            if (bdoData.links && Array.isArray(bdoData.links)) {
+                links = bdoData.links;
+                console.log(`🔗 Found ${links.length} links in Linkitylink BDO`);
+            } else {
+                console.log('⚠️ No links array found in Linkitylink BDO');
+            }
+
+            // Get user name from BDO
+            userName = bdoData.title || bdoData.name || 'My Links';
+
+        } catch (error) {
+            console.error('❌ Failed to fetch Linkitylink BDO by emojicode:', error.message);
+            // Continue with empty links - will show demo
+        }
+
+        // If no links, show demo links
+        if (links.length === 0) {
+            links = getDemoLinks();
+            userName = 'Demo Links';
+        }
+
+        // Limit to 20 links
+        const displayLinks = links.slice(0, 20);
+
+        // Generate HTML page
+        const html = generateLinkitylinkPage(displayLinks, userName, false, null);
+
+        res.send(html);
+
+    } catch (error) {
+        console.error('❌ Server error:', error);
+        res.status(500).send('Error loading linkitylink');
+    }
+});
+
+/**
  * Main route - Landing page or tapestry display
  *
  * No query params: Show landing page
@@ -2691,7 +2747,8 @@ app.listen(PORT, () => {
     console.log(`🌐 View demo: http://localhost:${PORT}`);
     console.log(`\n📝 Viewing Modes:`);
     console.log(`   Demo tapestry: http://localhost:${PORT}`);
-    console.log(`   By emojicode rune: http://localhost:${PORT}?emojicode=😀🔗💎🌟...`);
+    console.log(`   By emojicode: http://localhost:${PORT}/view/😀🔗💎🌟...`);
+    console.log(`   By alphanumeric: http://localhost:${PORT}/t/abc123...`);
     console.log(`   Legacy auth: http://localhost:${PORT}?pubKey=YOUR_PUBKEY&timestamp=TIMESTAMP&signature=SIGNATURE`);
     console.log(`\n📝 Creation Endpoints:`);
     console.log(`   POST /create - Create new Linkitylink with auto-generated SVG`);
