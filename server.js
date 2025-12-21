@@ -21,7 +21,6 @@ import bdoLib from 'bdo-js';
 import addieLib from 'addie-js';
 import sessionless from 'sessionless-node';
 import fetch from 'node-fetch';
-import { webkit } from 'playwright';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -1402,18 +1401,17 @@ app.get('/my-tapestries', async (req, res) => {
 });
 
 /**
- * POST /parse-linktree - Parse links from a Linktree URL using Playwright WebKit
+ * POST /parse-linktree - Parse links from a Linktree URL using lightweight HTTP fetch
  *
- * Uses real WebKit browser to bypass bot detection and execute JavaScript
+ * Linktree embeds all data in __NEXT_DATA__ script tag in initial HTML response
+ * No browser needed - just fetch HTML and parse the JSON
  * Returns just the links array without creating any BDOs
  */
 app.post('/parse-linktree', async (req, res) => {
-    let browser = null;
-
     try {
         const { url } = req.body;
 
-        console.log(`🌐 Parsing Linktree URL with WebKit: ${url}`);
+        console.log(`🌐 Parsing Linktree URL: ${url}`);
 
         // Validate URL
         if (!url || !url.includes('linktr.ee')) {
@@ -1423,48 +1421,40 @@ app.post('/parse-linktree', async (req, res) => {
             });
         }
 
-        // Launch WebKit browser
-        console.log('🚀 Launching WebKit browser...');
-        browser = await webkit.launch({
-            headless: true
+        console.log('📄 Fetching Linktree page...');
+
+        // Fetch HTML with realistic User-Agent
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
         });
 
-        const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-            viewport: { width: 1920, height: 1080 }
-        });
+        if (!response.ok) {
+            return res.status(400).json({
+                success: false,
+                error: `Failed to fetch Linktree page: ${response.statusText}`
+            });
+        }
 
-        const page = await context.newPage();
+        const html = await response.text();
 
-        console.log('📄 Navigating to Linktree page...');
+        console.log('🔍 Extracting __NEXT_DATA__ from HTML...');
 
-        // Navigate to page and wait for JavaScript to execute
-        await page.goto(url, {
-            waitUntil: 'networkidle',
-            timeout: 30000
-        });
+        // Parse __NEXT_DATA__ from HTML (Linktree embeds data in script tag)
+        const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s);
 
-        console.log('🔍 Extracting __NEXT_DATA__ from page...');
-
-        // Extract __NEXT_DATA__ after JavaScript execution
-        const nextData = await page.evaluate(() => {
-            const script = document.getElementById('__NEXT_DATA__');
-            if (!script) return null;
-            return JSON.parse(script.textContent);
-        });
-
-        if (!nextData) {
-            await browser.close();
+        if (!nextDataMatch) {
             return res.status(400).json({
                 success: false,
                 error: 'Could not find __NEXT_DATA__ in Linktree page. The page structure may have changed.'
             });
         }
 
+        const nextData = JSON.parse(nextDataMatch[1]);
         const pageProps = nextData.props?.pageProps?.account;
 
         if (!pageProps || !pageProps.links) {
-            await browser.close();
             return res.status(400).json({
                 success: false,
                 error: 'No links found on this Linktree page.'
@@ -1487,9 +1477,6 @@ app.post('/parse-linktree', async (req, res) => {
         const username = pageProps.username || 'Unknown';
 
         console.log(`✅ Extracted ${links.length} links + ${socialLinks.length} social links from @${username}'s Linktree`);
-
-        // Close browser
-        await browser.close();
 
         res.json({
             success: true,
